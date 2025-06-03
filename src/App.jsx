@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { db } from "./firebase";
 import {
-  doc, setDoc, getDoc, onSnapshot, updateDoc, arrayUnion, arrayRemove
+  doc, setDoc, onSnapshot
 } from "firebase/firestore";
 
+// Helper functions
 function getMonthDays(year, month) {
   const days = [];
   const last = new Date(year, month + 1, 0);
@@ -42,7 +43,7 @@ const processTemplate = [
 ];
 
 // --- Firebase sync helpers
-const DATA_DOC = "calendar/live"; // Change path if you want, e.g. per team/project
+const DATA_DOC = "calendar/live"; // Change path if you want
 
 // Initial data template
 const initialData = {
@@ -190,6 +191,19 @@ function App() {
     setEditText("");
   }
 
+  // --- Delete handlers
+  async function deleteFromSidebar(block) {
+    const newToSchedule = data.toSchedule.filter(b => b.id !== block.id);
+    await saveData({ ...data, toSchedule: newToSchedule });
+  }
+  async function deleteFromCalendar(dayKey, i) {
+    const newEvents = {
+      ...data.events,
+      [dayKey]: data.events[dayKey].filter((b, j) => j !== i)
+    };
+    await saveData({ ...data, events: newEvents });
+  }
+
   if (loading) return <div style={{ padding: 40 }}>Loading…</div>;
 
   // --- Render calendar grid
@@ -249,6 +263,21 @@ function App() {
               ) : (
                 <>
                   <span style={{ flex: 1 }}>{block.title} <b>({block.batch})</b></span>
+                  <button
+                    onClick={async (e) => {
+                      e.stopPropagation();
+                      await deleteFromSidebar(block);
+                    }}
+                    title="Delete"
+                    style={{
+                      marginLeft: 6,
+                      border: "none",
+                      background: "transparent",
+                      cursor: "pointer",
+                      color: "#c00",
+                      fontSize: 18
+                    }}
+                  >🗑️</button>
                   <button
                     onClick={e => { e.stopPropagation(); startEdit(block); }}
                     title="Edit text"
@@ -334,6 +363,21 @@ function App() {
                         <>
                           <span style={{ flex: 1 }}>{block.title} <b>({block.batch})</b></span>
                           <button
+                            onClick={async (e) => {
+                              e.stopPropagation();
+                              await deleteFromCalendar(key, i);
+                            }}
+                            title="Delete"
+                            style={{
+                              marginLeft: 6,
+                              border: "none",
+                              background: "transparent",
+                              cursor: "pointer",
+                              color: "#c00",
+                              fontSize: 18
+                            }}
+                          >🗑️</button>
+                          <button
                             onClick={e => { e.stopPropagation(); startEdit(block); }}
                             title="Edit text"
                             style={{
@@ -357,7 +401,7 @@ function App() {
         <div style={{ marginTop: 16, fontSize: 13, color: "#555" }}>
           Drag a process from the sidebar or any day to another day.<br />
           Click &lt; / &gt; to switch months.<br />
-          <span style={{ color: "#197" }}>Click ✏️ to edit any process text.</span>
+          <span style={{ color: "#197" }}>Click ✏️ to edit any process text. Click 🗑️ to delete.</span>
         </div>
       </div>
     </div>

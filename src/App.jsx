@@ -26,10 +26,19 @@ function getRandomColor() {
 }
 
 const processTemplate = [
-  "Plasma Treatment",
-  "Enzyme Dipcoating",
-  "QC",
+  "Enzyme",
+  "Enzyme Filmetrics",
+  "PVC Prep",
+  "Outer Membrane",
+  "Filmetrics OM",
+  "Assembly",
+  "Precal",
+  "Photo QC & Elec Test",
   "Packaging",
+  "Label & Send for Sterilisation",
+  "Receive Back from Steralisation",
+  "Pack for hospitals",
+  "Post-steri Cal",
 ];
 
 // --- Firebase sync helpers

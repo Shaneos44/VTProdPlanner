@@ -43,10 +43,19 @@ function getRandomColor() {
 }
 
 const processTemplate = [
-  "Plasma Treatment",
-  "Enzyme Dipcoating",
-  "QC",
+  "Enzyme",
+  "Filmetrics enzyme",
+  "PVC Prep",
+  "Outer membrane",
+  "Filmetrics outer membrane",
+  "Assembly",
+  "Precal",
+  "Photo QC + Electrical test",
   "Packaging",
+  "Label and send for Sterilization",
+  "Receive back from Sterilization",
+  "Pack for hospitals",
+  "Post-steri cal",
 ];
 
 const DATA_DOC = "calendar/live";

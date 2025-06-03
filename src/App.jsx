@@ -37,7 +37,7 @@ const processTemplate = [
   "Photo QC & Elec Test",
   "Packaging",
   "Label & Send for Sterilisation",
-  "Receive Back from Steralisation",
+  "Receive Back from Sterilisation",
   "Pack for hospitals",
   "Post-steri Cal",
 ];

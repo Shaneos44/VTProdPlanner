@@ -4,7 +4,23 @@ import {
   doc, setDoc, onSnapshot
 } from "firebase/firestore";
 
-// Helper functions
+// Lighten color for completed
+function lightenColor(color, percent) {
+  // color: #RRGGBB, percent: 0.0 - 1.0
+  let num = parseInt(color.slice(1),16),
+      amt = Math.round(2.55 * percent * 100),
+      R = (num >> 16) + amt,
+      G = (num >> 8 & 0x00FF) + amt,
+      B = (num & 0x0000FF) + amt;
+  return "#" + (
+    0x1000000
+    + (R < 255 ? (R < 1 ? 0 : R) : 255)*0x10000
+    + (G < 255 ? (G < 1 ? 0 : G) : 255)*0x100
+    + (B < 255 ? (B < 1 ? 0 : B) : 255)
+  ).toString(16).slice(1);
+}
+
+// Helpers for dates etc
 function getMonthDays(year, month) {
   const days = [];
   const last = new Date(year, month + 1, 0);
@@ -27,59 +43,61 @@ function getRandomColor() {
 }
 
 const processTemplate = [
-  "Enzyme",
-  "Enzyme Filmetrics",
-  "PVC Prep",
-  "Outer Membrane",
-  "Filmetrics OM",
-  "Assembly",
-  "Precal",
-  "Photo QC & Elec Test",
+  "Plasma Treatment",
+  "Enzyme Dipcoating",
+  "QC",
   "Packaging",
-  "Label & Send for Sterilisation",
-  "Receive Back from Sterilisation",
-  "Pack for hospitals",
-  "Post-steri Cal",
 ];
 
-// --- Firebase sync helpers
-const DATA_DOC = "calendar/live"; // Change path if you want
+const DATA_DOC = "calendar/live";
 
-// Initial data template
 const initialData = {
   year: new Date().getFullYear(),
   month: new Date().getMonth(),
   toSchedule: [],
   batchColors: {},
-  events: {}, // key: date, value: array of blocks
+  events: {},
 };
 
 async function saveData(data) {
   await setDoc(doc(db, DATA_DOC), data);
 }
 
+function ensureCompleted(block) {
+  // Patch for legacy blocks missing .completed
+  return { ...block, completed: typeof block.completed === "boolean" ? block.completed : false };
+}
+
 function App() {
-  // Local state mirrors Firestore data
   const [data, setData] = useState(initialData);
   const [loading, setLoading] = useState(true);
 
-  // For drag-and-drop
+  // Drag and drop
   const [dragBlock, setDragBlock] = useState(null);
   const [dragFrom, setDragFrom] = useState(null);
 
-  // For editing
+  // Edit
   const [editBlock, setEditBlock] = useState(null);
   const [editText, setEditText] = useState("");
   const [batch, setBatch] = useState("");
 
-  // ---- Sync data from Firestore
+  // Sync from Firestore
   useEffect(() => {
-    // Realtime subscription to Firestore document
     const unsub = onSnapshot(doc(db, DATA_DOC), (docSnap) => {
       if (docSnap.exists()) {
-        setData(docSnap.data());
+        // Patch for missing .completed (migrate old data)
+        let d = docSnap.data();
+        d = {
+          ...d,
+          toSchedule: (d.toSchedule || []).map(ensureCompleted),
+          events: Object.fromEntries(
+            Object.entries(d.events || {}).map(([k, arr]) => [
+              k, arr.map(ensureCompleted)
+            ])
+          )
+        };
+        setData(d);
       } else {
-        // If not exists, initialize it
         saveData(initialData);
         setData(initialData);
       }
@@ -89,7 +107,7 @@ function App() {
     // eslint-disable-next-line
   }, []);
 
-  // ---- Calendar navigation
+  // Calendar navigation
   const prevMonth = () => {
     const newMonth = data.month === 0 ? 11 : data.month - 1;
     const newYear = data.month === 0 ? data.year - 1 : data.year;
@@ -101,7 +119,7 @@ function App() {
     saveData({ ...data, month: newMonth, year: newYear });
   };
 
-  // ---- Block input
+  // Batch input
   const handleBatchInput = async () => {
     if (!batch.trim()) return;
     const color = data.batchColors[batch] || getRandomColor();
@@ -110,6 +128,7 @@ function App() {
       title: proc,
       batch,
       color,
+      completed: false,
       id: Math.random().toString(36).slice(2) + Date.now()
     }));
     await saveData({
@@ -120,7 +139,7 @@ function App() {
     setBatch("");
   };
 
-  // ---- Assign block to day
+  // Assign block to day
   const handleAssign = async (block, day) => {
     const key = formatDateKey(day);
     const newEvents = { ...data.events, [key]: [...(data.events[key] || []), block] };
@@ -131,7 +150,7 @@ function App() {
     });
   };
 
-  // ---- Move block from a day to a different day
+  // Move block between days
   const moveBlockBetweenDays = async (fromKey, index, toDay) => {
     const toKey = formatDateKey(toDay);
     const fromArr = [...(data.events[fromKey] || [])];
@@ -147,7 +166,7 @@ function App() {
     });
   };
 
-  // ---- Drag-and-drop event handlers
+  // Drag handlers
   const onDragStartSidebar = (block) => {
     setDragBlock(block);
     setDragFrom({ type: "sidebar" });
@@ -167,7 +186,7 @@ function App() {
     setDragFrom(null);
   };
 
-  // --- Editing handlers
+  // Edit handlers
   async function startEdit(block) {
     setEditBlock(block.id);
     setEditText(block.title);
@@ -191,7 +210,7 @@ function App() {
     setEditText("");
   }
 
-  // --- Delete handlers
+  // Delete handlers
   async function deleteFromSidebar(block) {
     const newToSchedule = data.toSchedule.filter(b => b.id !== block.id);
     await saveData({ ...data, toSchedule: newToSchedule });
@@ -204,9 +223,24 @@ function App() {
     await saveData({ ...data, events: newEvents });
   }
 
+  // Toggle complete
+  async function toggleCompleteSidebar(block, checked) {
+    const updated = { ...block, completed: checked };
+    const newToSchedule = data.toSchedule.map(b => b.id === block.id ? updated : b);
+    await saveData({ ...data, toSchedule: newToSchedule });
+  }
+  async function toggleCompleteCalendar(dayKey, i, checked) {
+    const updated = { ...data.events[dayKey][i], completed: checked };
+    const newEvents = {
+      ...data.events,
+      [dayKey]: data.events[dayKey].map((b, j) => j === i ? updated : b)
+    };
+    await saveData({ ...data, events: newEvents });
+  }
+
   if (loading) return <div style={{ padding: 40 }}>Loading…</div>;
 
-  // --- Render calendar grid
+  // Render calendar grid
   const days = getMonthDays(data.year, data.month);
   const firstWeekday = new Date(data.year, data.month, 1).getDay();
   const blanks = Array(firstWeekday).fill(null);
@@ -234,11 +268,11 @@ function App() {
             <li
               key={block.id}
               style={{
-                background: block.color,
+                background: block.completed ? lightenColor(block.color, 0.7) : block.color,
                 marginBottom: 8,
                 padding: 8,
                 borderRadius: 6,
-                color: "#222",
+                color: block.completed ? "#888" : "#222",
                 opacity: dragBlock === block ? 0.5 : 1,
                 cursor: "grab",
                 display: "flex",
@@ -248,6 +282,14 @@ function App() {
               onDragStart={() => onDragStartSidebar(block)}
               onDragEnd={() => { setDragBlock(null); setDragFrom(null); }}
             >
+              {/* Completed Checkbox */}
+              <input
+                type="checkbox"
+                checked={!!block.completed}
+                onChange={e => toggleCompleteSidebar(block, e.target.checked)}
+                style={{ marginRight: 8 }}
+                title="Mark complete"
+              />
               {editBlock === block.id ? (
                 <input
                   value={editText}
@@ -262,7 +304,13 @@ function App() {
                 />
               ) : (
                 <>
-                  <span style={{ flex: 1 }}>{block.title} <b>({block.batch})</b></span>
+                  <span style={{
+                    flex: 1,
+                    textDecoration: block.completed ? "line-through" : "none",
+                    color: block.completed ? "#888" : "#222"
+                  }}>
+                    {block.title} <b>({block.batch})</b>
+                  </span>
                   <button
                     onClick={async (e) => {
                       e.stopPropagation();
@@ -332,8 +380,8 @@ function App() {
                     <div
                       key={block.id}
                       style={{
-                        background: block.color,
-                        color: "#222",
+                        background: block.completed ? lightenColor(block.color, 0.7) : block.color,
+                        color: block.completed ? "#888" : "#222",
                         borderRadius: 6,
                         margin: "2px 0",
                         fontSize: 13,
@@ -347,6 +395,14 @@ function App() {
                       onDragStart={() => onDragStartCalendar(block, key, i)}
                       onDragEnd={() => { setDragBlock(null); setDragFrom(null); }}
                     >
+                      {/* Completed Checkbox */}
+                      <input
+                        type="checkbox"
+                        checked={!!block.completed}
+                        onChange={e => toggleCompleteCalendar(key, i, e.target.checked)}
+                        style={{ marginRight: 8 }}
+                        title="Mark complete"
+                      />
                       {editBlock === block.id ? (
                         <input
                           value={editText}
@@ -361,7 +417,13 @@ function App() {
                         />
                       ) : (
                         <>
-                          <span style={{ flex: 1 }}>{block.title} <b>({block.batch})</b></span>
+                          <span style={{
+                            flex: 1,
+                            textDecoration: block.completed ? "line-through" : "none",
+                            color: block.completed ? "#888" : "#222"
+                          }}>
+                            {block.title} <b>({block.batch})</b>
+                          </span>
                           <button
                             onClick={async (e) => {
                               e.stopPropagation();
@@ -401,7 +463,10 @@ function App() {
         <div style={{ marginTop: 16, fontSize: 13, color: "#555" }}>
           Drag a process from the sidebar or any day to another day.<br />
           Click &lt; / &gt; to switch months.<br />
-          <span style={{ color: "#197" }}>Click ✏️ to edit any process text. Click 🗑️ to delete.</span>
+          <span style={{ color: "#197" }}>
+            Tick the checkbox when a process is complete (it stays visible but changes color).
+            <br />Click ✏️ to edit, 🗑️ to delete.
+          </span>
         </div>
       </div>
     </div>
